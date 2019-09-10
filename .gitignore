@@ -1,0 +1,10 @@
+/train.json.elmo.preprocessed.pickle
+/train.json
+/train.json.preprocessed.pickle
+/train.masked.json
+/dev.json.preprocessed.pickle
+/dev.json.elmo.preprocessed.pickle
+/dev.json
+/data/glove.840B.300d.zip
+/data/elmo_2x4096_512_2048cnn_2xhighway_options.json
+/data/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5
