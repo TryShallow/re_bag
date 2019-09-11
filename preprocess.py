@@ -5,6 +5,7 @@ import nltk
 import pickle
 import logging
 import numpy as np
+import argparse
 
 from progressbar import ProgressBar, Percentage, Bar, Timer, ETA
 from nltk.tokenize import TweetTokenizer
@@ -313,7 +314,15 @@ def config_logger(log_prefix):
 
 if __name__ == '__main__':
     # file_name = 'train.json'
-    file_name = 'dev.json'
+    # file_name = 'dev.json'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('file_name', type=str)
+
+    args = parser.parse_args()
+    file_name = args.file_name
+    if file_name == "" or not file_name :
+        print('file_name is None')
+        exit()
     options_file = 'data/elmo_2x4096_512_2048cnn_2xhighway_options.json'
     weight_file = 'data/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5'
     glove_file = 'data/glove.840B.300d.zip'
