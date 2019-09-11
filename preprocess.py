@@ -24,7 +24,7 @@ class Preprocessor(object):
         self.max_support_length = 512
         self.is_masked = is_masked
         self.use_elmo = True
-        self.elmo_split_interval = 2
+        self.elmo_split_interval = 4
         self.tag_dict = {'<PAD>': 0, '<UNK>': 1, '<POS>': 2, '<EOS>': 3}
 
     def preprocess(self):
@@ -56,7 +56,7 @@ class Preprocessor(object):
     def do_preprocess4graph(self, pickle_file):
         with open(self.file_name, 'r') as f:
             data = json.load(f)
-            data = data[:10]
+            # data = data[:10]
             supports = self.do_preprocess(data, mode='supports')
             self.logger.info(supports)
 
