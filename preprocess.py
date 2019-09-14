@@ -54,6 +54,7 @@ class Preprocessor(object):
             text_data.append(tmp)
         if self.use_elmo:
             data_slices = len(text_data) // self.elmo_slice_len
+            print(data_slices, len(text_data), self.elmo_slice_len)
             for x in range(data_slices):
                 self.do_preprocess4elmo(text_data[x * self.elmo_slice_len: x * (1 + self.elmo_slice_len)],
                                         elmo_pickle_file + "." + str(x))
