@@ -11,6 +11,7 @@ from progressbar import ProgressBar, Percentage, Bar, Timer, ETA
 from nltk.tokenize import TweetTokenizer
 from allennlp.commands.elmo import ElmoEmbedder
 
+GPU_INDEX = 0
 
 class Preprocessor(object):
     def __init__(self, file_name, options_file, weight_file, glove_file, logger, is_masked=False):
@@ -24,8 +25,9 @@ class Preprocessor(object):
         self.max_support_length = 512
         self.is_masked = is_masked
         self.use_elmo = True
-        self.elmo_split_interval = 4
+        self.elmo_split_interval = 8
         self.tag_dict = {'<PAD>': 0, '<UNK>': 1, '<POS>': 2, '<EOS>': 3}
+        self.elmo_slice_len = 10000
 
     def preprocess(self):
         preprocess_graph_file_name = self.file_name
@@ -51,7 +53,10 @@ class Preprocessor(object):
             tmp['supports'] = graph_d['supports']
             text_data.append(tmp)
         if self.use_elmo:
-            self.do_preprocess4elmo(text_data, elmo_pickle_file)
+            data_slices = len(text_data) // self.elmo_slice_len
+            for x in range(data_slices):
+                self.do_preprocess4elmo(text_data[x * self.elmo_slice_len: x * (1 + self.elmo_slice_len)],
+                                        elmo_pickle_file + ".{%d}".format(x))
 
     def do_preprocess4graph(self, pickle_file):
         with open(self.file_name, 'r') as f:
@@ -73,9 +78,9 @@ class Preprocessor(object):
 
     def do_preprocess4elmo(self, text_data, pickle_file):
         if not os.path.isfile(pickle_file):
-            elmoEmbedder = ElmoEmbedder(self.options_file, self.weight_file, 0)
+            elmo_embedder = ElmoEmbedder(self.options_file, self.weight_file, GPU_INDEX)
             self.logger.info("Preprocessing Json data for Elmo...")
-            data = self.do_preprocess(text_data, mode='elmo', ee=elmoEmbedder)
+            data = self.do_preprocess(text_data, mode='elmo', ee=elmo_embedder)
             self.logger.info("Preprocessing Elmo data finished.")
             with open(pickle_file, 'wb') as f:
                 pickle.dump(data, f)
