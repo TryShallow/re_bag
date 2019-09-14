@@ -9,7 +9,7 @@ import argparse
 
 from progressbar import ProgressBar, Percentage, Bar, Timer, ETA
 from nltk.tokenize import TweetTokenizer
-from allennlp.commands.elmo import ElmoEmbedder
+# from allennlp.commands.elmo import ElmoEmbedder
 
 GPU_INDEX = 0
 
@@ -94,7 +94,7 @@ class Preprocessor(object):
         data_gen = []
         widgets = ['Progress: ', Percentage(), ' ', Bar('#'), ' ', Timer(), ' ', ETA(), ' ']
         pbar = ProgressBar(widgets=widgets, maxval=len(data_mb)).start()
-
+        print("Total data count", len(data_mb))
         data_count = 0
         for index, data in enumerate(data_mb):
             if mode == 'supports':
@@ -108,7 +108,6 @@ class Preprocessor(object):
                 preprocess_graph_data = self.preprocess4graph(data, supports[index]['supports'])
                 data_gen.append(preprocess_graph_data)
             elif mode == 'elmo':
-                print('processing elmo %d' % (data_count + 1))
                 preprocess_elmo_data = self.preprocess4elmo(data, ee)
                 data_gen.append(preprocess_elmo_data)
 
