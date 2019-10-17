@@ -3,9 +3,9 @@ import numpy as np
 import torch.nn as nn
 
 
-class ScaledDotproductAttention(nn.Module):
+class ScaledDotProductAttention(nn.Module):
     def __init__(self, dropout=0.):
-        super(ScaledDotproductAttention, self).__init__()
+        super(ScaledDotProductAttention, self).__init__()
         self.dropout = nn.Dropout(dropout)
         self.softmax = nn.Softmax(dim=2)
 
@@ -13,7 +13,7 @@ class ScaledDotproductAttention(nn.Module):
         attention = torch.bmm(q, k.transpose(1, 2))
         if scale:
             attention *= scale
-        if mask:
+        if mask is not None:
             attention = attention.masked_fill_(mask, -np.inf)
         attention = self.softmax(attention)
         attention = self.dropout(attention)
@@ -22,7 +22,7 @@ class ScaledDotproductAttention(nn.Module):
 
 
 if __name__ == '__main__':
-    text = torch.randn(2, 2, 3)
-    att, con = ScaledDotproductAttention()(text, text, text)
+    text = torch.randn(2, 3, 4)
+    att, con = ScaledDotProductAttention()(text, text, text)
     print(att)
     print(con)

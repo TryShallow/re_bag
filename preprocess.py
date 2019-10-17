@@ -29,10 +29,10 @@ class Preprocessor(object):
         self.max_support_length = 512
         self.is_masked = is_masked
         self.use_elmo = True
-        self.elmo_split_interval = 2
+        self.elmo_split_interval = 4
         self.tag_dict = {'<PAD>': 0, '<UNK>': 1, '<POS>': 2, '<EOS>': 3}
         self.elmo_slice_len = 1000
-        self.gpu_indexes = [0, ]
+        self.gpu_indexes = [0, 1]
 
         self.data_gen_dir = 'processed_data'
         if not os.path.exists(self.data_gen_dir):
@@ -80,7 +80,7 @@ class Preprocessor(object):
             #     self.do_preprocess4elmo(text_data[data_slices * self.elmo_slice_len:],
             #                             elmo_pickle_file + "." + str(data_slices))
             threads = []
-            for i,_ in enumerate(self.gpu_indexes):
+            for i, _ in enumerate(self.gpu_indexes):
                 t = threading.Thread(target=self.func_elmo, args=(i, text_data, elmo_pickle_file))
                 t.start()
                 threads.append(t)
@@ -205,7 +205,26 @@ class Preprocessor(object):
                                   for windex, word_support in enumerate(support) for cindex, candidate in enumerate(tok_unmarked_candidates)
                                   if self.check(support, windex, candidate, for_unmarked=True)] for sindex, support in enumerate(supports)]
                 mask = self.merge_two_masks(mask, unmarked_mask)
-            # [[[[],[]], ], []]
+
+        # For example,
+        # supports = [
+        #     '''The Hanging Gardens, in Mumbai, also known as Pherozeshah
+        # Mehta Gardens, are terraced gardens … They provide sunset views
+        # over the [Arabian Sea] …''',
+        #     '''Mumbai (also known as Bombay, the official name until 1995) is the
+        # capital city of the Indian state of Maharashtra. It is the most
+        # populous city in India …''',
+        #     '''The Arabian Sea is a region of the northern Indian Ocean bounded
+        # on the north by Pakistan and Iran, on the west by northeastern
+        # Somalia and the Arabian Peninsula, and on the east by India …'''
+        # ]
+        # candidates = ['Iran', 'India', 'Pakistan', 'Somalia']
+
+        # mask = [[], [[[1, 31, 1]]], [[[2, 16, 2]], [[2, 18, 0]], [[2, 25, 3]], [[2, 36, 1]]]]
+        # nodes_id_name = [[], [(0, 1)], [(1, 2), (2, 0), (3, 3), (4, 1)]]
+        # nodes_candidates_id = [1, 2, 0, 3, 1]
+        # edges_in = [(1, 2), (1, 3), (1, 4), (2, 1), (2, 3), (2, 4), (3, 1), (3, 2), (3, 4), (4, 1), (4, 2), (4, 3)]
+        # edges_out = [(0, 4), (4, 0)]
 
         nodes_id_name = []
         count = 0
@@ -215,12 +234,10 @@ class Preprocessor(object):
                 u.append((count, f))
                 count += 1
             nodes_id_name.append(u)
-        # [0, 1, 1, 2]
         data['nodes_candidates_id'] = [[node_triple[-1] for node_triple in node][0] for nodes_in_a_support
                                        in mask for node in nodes_in_a_support]
 
         edges_in, edges_out = [], []
-        # [[(0, 0), (1, 1)], [(2, 1), (3, 2)], []]
         for e0 in nodes_id_name:
             for f0, w0 in e0:
                 for f1, w1 in e0:
@@ -242,7 +259,7 @@ class Preprocessor(object):
         return data
 
     def preprocess4elmo(self, text_data, ee):
-        data_elmo = {}
+        data_elmo = dict()
 
         mask_ = [[x[:-1] for x in f] for e in text_data['nodes_mask'] for f in e]
         supports, query, query_full_tokens = text_data['supports'], text_data['query'], text_data['query_full_token']
@@ -271,6 +288,7 @@ class Preprocessor(object):
                         ), 'constant')
                     candidates = np.concatenate((candidates, current_candidates))
                 count += split_interval
+
         data_elmo['nodes_elmo'] = [(candidates.transpose((0, 2, 1, 3))[np.array(m).T.tolist()]).astype(np.float16)
                                    for m in mask_]
         # (batch_size, 3, num_timesteps, 1024)
@@ -289,10 +307,10 @@ class Preprocessor(object):
 
     def check(self, support, word_index, candidate, for_unmarked=False):
         if for_unmarked:
-            return sum([self.is_contain_special_symbol(c_, support[word_index + j].lower())
+            return sum([self.is_contain_special_symbol(c_.lower(), support[word_index + j].lower())
                         for j, c_ in enumerate(candidate) if word_index + j < len(support)]) == len(candidate)
         else:
-            return sum([support[word_index + j].lower() == c_ for j, c_ in enumerate(candidate)
+            return sum([support[word_index + j].lower() == c_.lower() for j, c_ in enumerate(candidate)
                         if word_index + j < len(support)]) == len(candidate)
 
     def is_contain_special_symbol(self, candidate_tok, support_tok):

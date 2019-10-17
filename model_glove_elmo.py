@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from dataset import MyDataset
-
 
 class Model(nn.Module):
     def __init__(self, device, use_elmo=True, use_glove=True):
@@ -21,10 +19,10 @@ class Model(nn.Module):
 
         # feature layer
         if self.query_encoding_type == 'linear':
-            self.query_linear = nn.Linear(3 * 1024, 512)
+            self.query_linear = nn.Linear(3 * 1024 + 300, 512)
         elif self.query_encoding_type == 'lstm':
-            self.query_lstm = nn.LSTM(3 * 1024, 256, 2, bidirectional=True, batch_first=True)
-        self.nodes_linear = nn.Linear(3 * 1024, self.encoding_size)
+            self.query_lstm = nn.LSTM(3 * 1024 + 300, 256, 2, bidirectional=True, batch_first=True)
+        self.nodes_linear = nn.Linear(3 * 1024 + 300, self.encoding_size)
         # gcn layer
         self.nodes_dropout = nn.Dropout(self.dropout)
         self.hidden_linears = nn.ModuleList([nn.Linear(512, 512)] * 4)
@@ -37,21 +35,24 @@ class Model(nn.Module):
 
         # self.minf = torch.FloatTensor([-np.inf]).requires_grad_(False).to(self.device)
 
-    def _calc_param(self):
-        param = dict()
-        dim_feature = 0
-        if self.use_glove:
-            # dim_feature
+    # def _calc_param(self):
+    #     param = dict()
+    #     dim_feature = 0
+    #     if self.use_glove:
+    #         # dim_feature
 
     def forward(self, x):
         query_length = x['query_length_mb']
         nodes_elmo = x['nodes_elmo_mb']
         query_elmo = x['query_elmo_mb']
+        nodes_glove = x['nodes_glove_mb']
+        query_glove = x['query_glove_mb']
         nodes_length = x['nodes_length_mb']
         adj = x['adj_mb']
         bmask = x['bmask_mb']
 
-        nodes_compress, query_compress = self.feature_layer(query_length, nodes_elmo, query_elmo)
+        nodes_compress, query_compress = self.feature_layer(query_length, nodes_elmo, query_elmo,
+                                                            nodes_glove, query_glove)
         nodes_mask = torch.arange(self.max_nodes, dtype=torch.int32).requires_grad_(False).to(self.device).unsqueeze(0)\
             .repeat((nodes_length.size(0), 1)) < nodes_length.unsqueeze(-1)
         nodes_mask = nodes_mask.type(torch.float32).unsqueeze(-1)
@@ -70,11 +71,8 @@ class Model(nn.Module):
             query_flat = torch.reshape(query_elmo, (-1, self.max_query_size, 3 * 1024))
             nodes_flat = torch.reshape(nodes_elmo, (-1, self.max_nodes, 3 * 1024))
         if self.use_glove:
-            if query_flat is None:
-                query_flat, nodes_flat = query_glove, nodes_glove
-            else:
-                query_flat = torch.reshape(query_elmo, (-1, self.max_query_size, 3 * 1024))
-                nodes_flat = torch.reshape(nodes_elmo, (-1, self.max_nodes, 3 * 1024))
+            query_flat = torch.cat((query_flat, query_glove), -1)
+            nodes_flat = torch.cat((nodes_flat, nodes_glove), -1)
 
         query_compress = None
         if self.query_encoding_type == 'lstm':

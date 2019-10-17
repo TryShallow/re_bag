@@ -8,8 +8,8 @@ from torch.utils.data import Dataset, DataLoader
 
 
 class MyDataset(Dataset):
-    def __init__(self, file, data_patches=range(5), use_elmo=True, max_nodes=500, max_query_size=25, max_candidates=80, max_candidates_len=10,
-                 use_edge=True):
+    def __init__(self, file, data_patches=range(5), use_elmo=True, max_nodes=512, max_query_size=25, max_candidates=80, max_candidates_len=10,
+                 use_edge=True, use_glove=True):
         self.file = file
         self.use_elmo = use_elmo
         self.max_nodes = max_nodes
@@ -17,10 +17,12 @@ class MyDataset(Dataset):
         self.max_candidates = max_candidates
         self.max_candidates_len = max_candidates_len
         self.use_edge = use_edge
-        self.data_gen_dir = 'processed_data'
+        self.use_glove = use_glove
+        # self.data_gen_dir = 'processed_data'
 
-        self.data_elmo = []
         self.data = []
+        self.data_elmo = []
+        self.data_glove = []
         self.elmo_slice_len = 1000
         self.data_patches = data_patches
         self._init_data()
@@ -36,6 +38,11 @@ class MyDataset(Dataset):
         if self.use_elmo:
             data_elmo_mb = self.data_elmo[index]
             nodes_elmo_mb, query_elmo_mb = self.build_elmo_data(data_elmo_mb)
+        data_glove_mb = None
+        nodes_glove_mb, query_glove_mb = None, None
+        if self.use_glove:
+            data_glove_mb = self.data_glove[index]
+            nodes_glove_mb, query_glove_mb = self.build_glove_data(data_glove_mb)
 
         nodes_length = self.truncate_nodes_and_edges(data_mb, data_elmo_mb)
         query_length = self.truncate_query(data_mb, data_elmo_mb)
@@ -56,6 +63,8 @@ class MyDataset(Dataset):
             'answer_candidates_id_mb': data_mb['answer_candidate_id'],
             'nodes_elmo_mb': nodes_elmo_mb,
             'query_elmo_mb': query_elmo_mb,
+            'nodes_glove_mb': nodes_glove_mb,
+            'query_glove_mb': query_glove_mb
         }
 
     @staticmethod
@@ -63,6 +72,8 @@ class MyDataset(Dataset):
         batch['query_length_mb'] = batch['query_length_mb'].to(device)
         batch['nodes_elmo_mb'] = batch['nodes_elmo_mb'].to(device)
         batch['query_elmo_mb'] = batch['query_elmo_mb'].to(device)
+        batch['nodes_glove_mb'] = batch['nodes_glove_mb'].to(device)
+        batch['query_glove_mb'] = batch['query_glove_mb'].to(device)
         batch['nodes_length_mb'] = batch['nodes_length_mb'].type(torch.int32).to(device)
         batch['adj_mb'] = batch['adj_mb'].type(torch.float32).to(device)
         batch['bmask_mb'] = batch['bmask_mb'].type(torch.float32).to(device)
@@ -75,12 +86,17 @@ class MyDataset(Dataset):
         graph_file_name = '{}.preprocessed.pickle'.format(self.file)
         with open(graph_file_name, 'rb') as f:
             self.data = [d for d in pickle.load(f) if len(d['nodes_candidates_id']) > 0]
-            self.data = self.data[:1000]
+            # self.data = self.data[:1000]
         if self.use_elmo:
             elmo_file_name = '{}.elmo.preprocessed.pickle'.format(self.file)
             with open(elmo_file_name, "rb") as f:
                 self.data_elmo = [d for d in pickle.load(f) if len(d['nodes_elmo']) > 0]
-                self.data_elmo = self.data_elmo[:1000]
+                # self.data_elmo = self.data_elmo[:1000]
+        if self.use_glove:
+            glove_file_name = '{}.glove.preprocessed.pickle'.format(self.file)
+            with open(glove_file_name, 'rb') as f:
+                self.data_glove = [d for d in pickle.load(f) if len(d['nodes_glove']) > 0]
+                # self.data_glove = self.data_glove[:1000]
 
     def _init_data1(self):
         graph_file_name = os.path.join(self.data_gen_dir,'{}.preprocessed.pickle'.format(self.file))
@@ -108,6 +124,20 @@ class MyDataset(Dataset):
                                ((0, self.max_query_size - data_elmo_mb['query_elmo'].shape[0]),
                                 (0, 0), (0, 0)), mode='constant').astype(np.float32)
         return nodes_elmo_mb, query_elmo_mb
+
+    def build_glove_data(self, data_glove_mb):
+        filt = lambda c: np.array(c[:].mean(0))
+        data_glove_mb['nodes_glove'] = data_glove_mb['nodes_glove'][: self.max_nodes]
+        nodes_glove_mb = np.pad(
+            np.array([filt(c) for c in data_glove_mb['nodes_glove']]),
+            ((0, self.max_nodes - len(data_glove_mb['nodes_glove'])), (0, 0)), mode='constant'
+        )
+        query_glove_mb = np.pad(
+            data_glove_mb['query_glove'],
+            ((0, self.max_query_size - data_glove_mb['query_glove'].shape[0]), (0, 0)),
+            mode='constant'
+        )
+        return nodes_glove_mb, query_glove_mb
 
     def truncate_nodes_and_edges(self, data, data_elmo):
         nodes_length_mb = len(data['nodes_candidates_id'])
@@ -190,10 +220,10 @@ if __name__ == '__main__':
     max_candidates = 80
     max_candidates_len = 10
 
-    dataset = MyDataset('train.json')
-    dataloader = DataLoader(dataset, 2)
+    dataset = MyDataset('dev.json')
+    dataloader = DataLoader(dataset, 1)
     for i, d in enumerate(dataloader):
-        print(i, d['adj_mb'].size())
-        if i == 10:
+        print(i, d)
+        if i == 1:
             break
 

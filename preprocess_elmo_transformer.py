@@ -23,18 +23,18 @@ class Preprocessor(object):
         self.glove_file = glove_file
         self.logger = logger
 
-        self.thread_lock = threading.Lock()
+        # self.thread_lock = threading.Lock()
 
         self.tokenizer = TweetTokenizer()
         self.max_support_length = 512
         self.is_masked = is_masked
         self.use_elmo = True
-        self.elmo_split_interval = 4
+        self.elmo_split_interval = 32
         self.tag_dict = {'<PAD>': 0, '<UNK>': 1, '<POS>': 2, '<EOS>': 3}
         self.elmo_slice_len = 1000
         self.gpu_indexes = [0, 1]
 
-        self.data_gen_dir = 'processed_data'
+        self.data_gen_dir = 'processed_data_elem_transformer'
         if not os.path.exists(self.data_gen_dir):
             os.mkdir(self.data_gen_dir)
         self.supports_file = os.path.join(self.data_gen_dir, 'supports.pickle')
@@ -79,13 +79,14 @@ class Preprocessor(object):
             # if len(text_data) % self.elmo_slice_len != 0:
             #     self.do_preprocess4elmo(text_data[data_slices * self.elmo_slice_len:],
             #                             elmo_pickle_file + "." + str(data_slices))
-            threads = []
-            for i, _ in enumerate(self.gpu_indexes):
-                t = threading.Thread(target=self.func_elmo, args=(i, text_data, elmo_pickle_file))
-                t.start()
-                threads.append(t)
-            for t in threads:
-                t.join()
+            # threads = []
+            # for i, _ in enumerate(self.gpu_indexes):
+            #     t = threading.Thread(target=self.func_elmo, args=(i, text_data, elmo_pickle_file))
+            #     t.start()
+            #     threads.append(t)
+            # for t in threads:
+            #     t.join()
+            self.do_preprocess4elmo(text_data, elmo_pickle_file, 0)
 
     def func_elmo(self, gpu_index, text_data, elmo_pickle_file):
         self.thread_lock.acquire()
@@ -162,8 +163,11 @@ class Preprocessor(object):
                 preprocess_graph_data = self.preprocess4graph(data, supports[index]['supports'])
                 data_gen.append(preprocess_graph_data)
             elif mode == 'elmo':
-                preprocess_elmo_data = self.preprocess4elmo(data, ee)
-                data_gen.append(preprocess_elmo_data)
+                try:
+                    preprocess_elmo_data = self.preprocess4elmo(data, ee)
+                    data_gen.append(preprocess_elmo_data)
+                except:
+                    self.logger.error("Process elmo %d error!!!" % data_count)
             data_count += 1
             pbar.update(data_count)
         pbar.finish()
@@ -259,6 +263,52 @@ class Preprocessor(object):
         return data
 
     def preprocess4elmo(self, text_data, ee):
+        data_elmo = {}
+
+        mask_ = [[x[:-1] for x in f] for e in text_data['nodes_mask'] for f in e]
+        supports, query, query_full_tokens = text_data['supports'], text_data['query'], text_data['query_full_token']
+        first_tokens_in_query = query[0].split('_')
+
+        split_interval = self.elmo_split_interval
+        if len(supports) <= split_interval:
+            candidates, _ = ee.batch_to_embeddings(supports)
+            candidates = candidates.data.cpu().numpy()
+        else:
+            ## split long support data into several parts to avoid possible OOM
+            count = 0
+            candidates = None
+            while count < len(supports):
+                current_candidates, _ = \
+                    ee.batch_to_embeddings(supports[count:min(count + split_interval, len(supports))])
+                current_candidates = current_candidates.data.cpu().numpy()
+                if candidates is None:
+                    candidates = current_candidates
+                else:
+                    if candidates.shape[2] > current_candidates.shape[2]:
+                        current_candidates = np.pad(current_candidates,
+                            ((0, 0), (0, 0), (0, candidates.shape[2] - current_candidates.shape[2]), (0, 0)), 'constant')
+                    elif current_candidates.shape[2] > candidates.shape[2]:
+                        candidates = np.pad(candidates,
+                            ((0, 0), (0, 0), (0, current_candidates.shape[2] - candidates.shape[2]), (0, 0)), 'constant')
+                    candidates = np.concatenate((candidates, current_candidates))
+                count += split_interval
+
+        data_elmo['nodes_elmo'] = [(candidates.transpose((0, 2, 1, 3))[np.array(m).T.tolist()]).astype(np.float16)
+                              for m in mask_]
+
+        query, _ = ee.batch_to_embeddings([query])
+        query = query.data.cpu().numpy()
+        data_elmo['query_elmo'] = (query.transpose((0, 2, 1, 3))).astype(np.float16)[0]
+        if len(first_tokens_in_query) == 1:
+            data_elmo['query_full_token_elmo'] = data_elmo['query_elmo']
+        else:
+            query_full_tokens, _ = ee.batch_to_embeddings([first_tokens_in_query])
+            query_full_tokens = query_full_tokens.cpu().numpy()
+            data_elmo['query_full_token_elmo'] = np.concatenate(
+                    (query_full_tokens.transpose((0, 2, 1, 3)).astype(np.float16)[0], data_elmo['query_elmo'][1:,:,:]), 0)
+        return data_elmo
+
+    def preprocess4elmo_bak(self, text_data, ee):
         data_elmo = dict()
 
         mask_ = [[x[:-1] for x in f] for e in text_data['nodes_mask'] for f in e]
